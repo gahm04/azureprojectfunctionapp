@@ -10,6 +10,12 @@
         "port": 9091
       },
       "preLaunchTask": "func: host start"
+    },
+    {
+      "name": "Python Debugger: Python File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}"
     }
   ]
 }

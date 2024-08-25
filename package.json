@@ -1,0 +1,23 @@
+{
+  "name": "azureprojectfunctionapp",
+  "version": "1.0.0",
+  "description": "I am replicating this project [Olympics Data- Cleaning, Exploration, Prediction][https://www.kaggle.com/code/chadalee/olympics-data-cleaning-exploration-prediction/input] BUT using Microsoft Azure. In this Repo, I have some Python code that was used for this experiment.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gahm04/azureprojectfunctionapp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gahm04/azureprojectfunctionapp/issues"
+  },
+  "homepage": "https://github.com/gahm04/azureprojectfunctionapp#readme",
+  "dependencies": {
+    "package.json": "^0.0.0"
+  }
+}

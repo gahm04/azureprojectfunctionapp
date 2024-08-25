@@ -13,51 +13,97 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 @app.route(route="funcKaggleDataFetch")
 def funcKaggleDataFetch(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
+    logging.info('Function started processing a request.')
 
-     # Replace with your Kaggle dataset details
-    dataset = 'heesoo37'  # olympics dataset
-    filename = '120-years-of-olympic-history-athletes-and-results.csv'  # Example: 'State_time_series.csv'
-    
-    # Access Kaggle API credentials from Azure Key Vault
-    credential = DefaultAzureCredential()
-    secret_client = SecretClient(vault_url="https://keggleapikey.vault.azure.net/", credential=credential)
-    kaggle_username = secret_client.get_secret("KaggleUsername").value
-    kaggle_key = secret_client.get_secret("KaggleApiKey").value
+    # Configuration for datasets to process
+    datasets_config = [
+        {
+            'owner': 'heesoo37',
+            'dataset': '120-years-of-olympic-history-athletes-and-results',
+            'filenames': ['athlete_events.csv', 'noc_regions.csv']
+        },
+        {
+            'owner': 'chadalee',
+            'dataset': 'country-wise-gdp-data',
+            'filenames': ['world_gdp.csv']  # Update with actual filenames if different
+        },
+        {
+            'owner': 'chadalee',
+            'dataset': 'country-wise-population-data',
+            'filenames': ['world_pop.csv']  # Update with actual filenames if different
+        }
+    ]
 
-    # Download dataset from Kaggle
-    kaggle_url = f"https://www.kaggle.com/api/v1/datasets/download/{dataset}"
-    headers = {'Authorization': f'Bearer {kaggle_key}'}
-    response = requests.get(kaggle_url, headers=headers)
-
-    if response.status_code == 200:
-        # Unzip the file and get the specific CSV file
-        zip_file = zipfile.ZipFile(io.BytesIO(response.content))
-        with zip_file.open(filename) as file:
-            csv_data = file.read()
+    try:
+        # Initialize Azure credentials
+        credential = DefaultAzureCredential()
         
-        # Upload the CSV data to Azure Blob Storage
-        blob_service_client = BlobServiceClient.from_connection_string(os.getenv("olympicsstudydatastorage"))
-        blob_client = blob_service_client.get_blob_client(container="raw-data-bronze", blob=filename)
-        blob_client.upload_blob(csv_data, overwrite=True)
-        
-        return func.HttpResponse(f"File {filename} uploaded successfully!", status_code=200)
-    else:
-        return func.HttpResponse(f"Failed to download data: {response.text}", status_code=response.status_code)
-
-    name = req.params.get('name')
-    if not name:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            pass
-        else:
-            name = req_body.get('name')
-
-    if name:
-        return func.HttpResponse(f"Hello, {name}. This HTTP triggered function executed successfully.")
-    else:
-        return func.HttpResponse(
-             "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
-             status_code=200
+        # Access Kaggle API credentials from Azure Key Vault
+        secret_client = SecretClient(
+            vault_url="https://keggleapikey.vault.azure.net/", 
+            credential=credential
         )
+        kaggle_username = secret_client.get_secret("KeggleAPIUsername").value
+        kaggle_key = secret_client.get_secret("KaggleApiKey").value
+        logging.info("Successfully retrieved Kaggle API credentials from Key Vault.")
+
+        # Initialize Blob Service Client
+        blob_service_client = BlobServiceClient(
+            account_url="https://olympicsstudydatastorage.blob.core.windows.net/", 
+            credential=credential
+        )
+        logging.info("Successfully initialized Azure Blob Service Client.")
+
+        # Process each dataset in the configuration
+        for config in datasets_config:
+            owner = config['owner']
+            dataset = config['dataset']
+            filenames = config['filenames']
+
+            logging.info(f"Processing dataset: {dataset} by {owner}")
+
+            kaggle_url = f"https://www.kaggle.com/api/v1/datasets/download/{owner}/{dataset}"
+            response = requests.get(kaggle_url, auth=(kaggle_username, kaggle_key))
+
+            # Check response status
+            if response.status_code != 200:
+                logging.error(f"Failed to download dataset {dataset}: HTTP {response.status_code}")
+                continue
+
+            # Check if the response is a ZIP file
+            if 'zip' not in response.headers.get('Content-Type', ''):
+                logging.error(f"The response for dataset {dataset} is not a ZIP file.")
+                continue
+
+            # Extract files from ZIP
+            try:
+                zip_file = zipfile.ZipFile(io.BytesIO(response.content))
+            except zipfile.BadZipFile:
+                logging.error(f"Downloaded file for dataset {dataset} is a bad ZIP file.")
+                continue
+
+            # Define the subfolder name for this dataset
+            subfolder = f"{dataset.replace(' ', '_')}"
+
+            # Process each file in the dataset
+            for filename in filenames:
+                if filename in zip_file.namelist():
+                    with zip_file.open(filename) as file:
+                        file_data = file.read()
+
+                    # Define the blob path (subfolder/filename)
+                    blob_path = f"{subfolder}/{filename}"
+
+                    # Upload the file to Azure Blob Storage within the subfolder
+                    blob_client = blob_service_client.get_blob_client(container="raw-data-bronze", blob=blob_path)
+                    blob_client.upload_blob(file_data, overwrite=True)
+                    logging.info(f"Successfully uploaded '{filename}' to subfolder '{subfolder}' in container 'raw-data-bronze'.")
+                else:
+                    logging.warning(f"File '{filename}' not found in dataset '{dataset}'.")
+
+        logging.info("All datasets processed successfully.")
+        return func.HttpResponse("Datasets processed successfully.", status_code=200)
+
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {str(e)}")
+        return func.HttpResponse(f"An error occurred: {str(e)}", status_code=500)
